@@ -18,12 +18,22 @@ import { randomUUID } from 'crypto';
 import { CreateUserRequestDTO } from './dtos/create-user.dto';
 import { UpdateUserPasswordRequestDTO } from './dtos/update-user-password.dto';
 import * as bcrypt from 'bcrypt';
+import { Pool } from 'pg';
 
 @Controller('users')
 export class AppController {
+  private _database: Pool;
   users: UserModel[] = [];
 
-  constructor() {}
+  constructor() {
+    this._database = new Pool({
+      host: 'localhost',
+      user: 'pocadmin',
+      password: 'password102030',
+      port: 5432,
+      database: 'poc_database',
+    });
+  }
 
   private async _hashPassword(password: string): Promise<string> {
     const saltRounds = 10;
@@ -42,10 +52,22 @@ export class AppController {
   async createUser(
     @Body() body: CreateUserRequestDTO,
   ): Promise<{ id: string; name: string }> {
-    const generatedId = randomUUID();
     const hashedPassword = await this._hashPassword(body.password);
-    const user = new UserModel(generatedId, body.name, hashedPassword);
-    this.users.push(user);
+
+    const response = await this._database.query<UserModel>(
+      `
+        INSERT INTO "users"
+        ("name", "password")
+        VALUES ($1, $2)
+        RETURNING
+          id AS "id",
+          name AS "name",
+          password AS "password"
+      `,
+      [body.name, hashedPassword],
+    );
+
+    const user = response.rows[0];
 
     return { id: user.id, name: user.name };
   }

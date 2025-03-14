@@ -2,7 +2,6 @@ import { IsAlpha, IsNotEmpty, IsStrongPassword } from 'class-validator';
 
 export class CreateUserRequestDTO {
   @IsNotEmpty()
-  @IsAlpha()
   name: string;
 
   @IsStrongPassword({
