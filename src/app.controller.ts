@@ -9,16 +9,17 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
 } from '@nestjs/common';
 import { UserModel } from 'src/models/user';
 import { UpdatedUserNameRequestDTO } from './dtos/update-user-name.dto';
-import { randomUUID } from 'crypto';
 import { CreateUserRequestDTO } from './dtos/create-user.dto';
 import { UpdateUserPasswordRequestDTO } from './dtos/update-user-password.dto';
 import * as bcrypt from 'bcrypt';
 import { Pool } from 'pg';
+import { promises } from 'dns';
 
 @Controller('users')
 export class AppController {
@@ -43,8 +44,21 @@ export class AppController {
 
   @HttpCode(HttpStatus.OK)
   @Get()
-  getUsers(): { id: string; name: string }[] {
-    return this.users.map((user) => ({ id: user.id, name: user.name }));
+  async getUsers(): Promise<{ id: string; name: string }[]> {
+    const response = await this._database.query<UserModel>(
+      `
+      SELECT
+        id AS "id",
+        name AS "name",
+        password AS "password"
+      FROM "users"
+      `,
+    );
+
+    return response.rows.map((users) => ({
+      id: users.id,
+      name: users.name,
+    }));
   }
 
   @HttpCode(HttpStatus.CREATED)
@@ -74,58 +88,142 @@ export class AppController {
 
   @HttpCode(HttpStatus.OK)
   @Get(':userId')
-  getUserById(@Param('userId') userId: string): { id: string; name: string } {
-    if (!userId) {
-      throw new BadRequestException('userId invalid.');
-    }
-    const user = this.users.find((user) => user.id === userId);
-    if (!user) {
-      throw new NotFoundException(`User with ID ${userId} not found`);
+  async getUserById(
+    @Param('userId') userId: string,
+  ): Promise<{ id: string; name: string }> {
+    const selectUser = await this._database.query<UserModel>(
+      `
+      SELECT
+        u.id AS "id",
+        u.name AS "name",
+        u.password AS "password"
+      FROM "users" AS u
+      WHERE id = $1
+      `,
+      [userId],
+    );
+
+    if (!selectUser.rows[0]) {
+      throw new NotFoundException('User not exist.');
     }
 
-    return { id: user.id, name: user.name };
+    const response = await this._database.query<UserModel>(
+      `
+      SELECT
+        id AS "id",
+        name AS "name",
+        password AS "password"
+      FROM "users"
+      WHERE id = $1
+      `,
+      [userId],
+    );
+    return { id: response.rows[0].id, name: response.rows[0].name };
   }
 
   @HttpCode(HttpStatus.OK)
   @Put(':userId')
-  updatedUserName(
+  async updatedUserName(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() body: UpdatedUserNameRequestDTO,
-  ): { id: string; name: string } {
-    const user = this.users.find((user) => user.id === userId);
-    if (!user) {
-      throw new NotFoundException(`User with ID ${userId} not found`);
+  ): Promise<{ id: string; name: string }> {
+    const selectUser = await this._database.query<UserModel>(
+      `
+      SELECT
+        u.id AS "id",
+        u.name AS "name",
+        u.password AS "password"
+      FROM "users" AS u
+      WHERE id = $1
+      `,
+      [userId],
+    );
+
+    if (!selectUser.rows[0]) {
+      throw new NotFoundException('User not exist.');
     }
 
-    user.name = body.name;
+    const response = await this._database.query<UserModel>(
+      `
+      UPDATE "users"
+        SET name = $1
+      WHERE id = $2
+      RETURNING 
+        id AS "id", 
+        name AS "name",
+        password AS "password";
+      `,
+      [body.name, userId],
+    );
 
-    return { id: user.id, name: user.name };
+    return { name: response.rows[0].name, id: response.rows[0].id };
   }
 
-  @HttpCode(HttpStatus.OK)
-  @Put(':userId/password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Patch(':userId/password')
   async updateUserPassword(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() body: UpdateUserPasswordRequestDTO,
-  ): Promise<{ id: string; name: string }> {
-    const user = this.users.find((user) => user.id === userId);
-    if (!user) {
-      throw new NotFoundException(`User with ID ${userId} not found`);
+  ): Promise<void> {
+    const selectUser = await this._database.query<UserModel>(
+      `
+      SELECT
+        u.id AS "id",
+        u.name AS "name",
+        u.password AS "password"
+      FROM "users" AS u
+      WHERE id = $1
+      `,
+      [userId],
+    );
+
+    if (!selectUser.rows[0]) {
+      throw new NotFoundException('User not exist.');
     }
 
-    user.password = await this._hashPassword(body.password);
+    const hashPassword = await this._hashPassword(body.password);
 
-    return { id: user.id, name: user.name };
+    await this._database.query(
+      `
+      UPDATE "users"
+        SET password = $1
+      WHERE id = $2
+    `,
+      [hashPassword, userId],
+    );
   }
 
   @HttpCode(HttpStatus.NO_CONTENT)
   @Delete(':userId')
-  removeUser(@Param('userId', ParseUUIDPipe) userId: string): void {
-    const user = this.users.find((item) => item.id === userId);
-    if (!user) {
-      throw new NotFoundException(`User with ID ${userId} not found`);
+  async removeUser(
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ): Promise<{ id: string; name: string }> {
+    const selectUser = await this._database.query<UserModel>(
+      `
+      SELECT
+        u.id AS "id",
+        u.name AS "name",
+        u.password AS "password"
+      FROM "users" AS u
+      WHERE id = $1
+      `,
+      [userId],
+    );
+
+    if (!selectUser.rows[0]) {
+      throw new NotFoundException('User not exist.');
     }
 
-    this.users = this.users.filter((item) => userId !== item.id);
+    const response = await this._database.query<UserModel>(
+      `
+      DELETE
+      FROM "users"
+      WHERE id = $1
+      RETURNING id, name
+      `,
+      [userId],
+    );
+
+    return { id: response.rows[0].id, name: response.rows[0].name };
   }
 }
