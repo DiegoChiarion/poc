@@ -19,12 +19,11 @@ import { CreateUserRequestDTO } from './dtos/create-user.dto';
 import { UpdateUserPasswordRequestDTO } from './dtos/update-user-password.dto';
 import * as bcrypt from 'bcrypt';
 import { Pool } from 'pg';
-import { promises } from 'dns';
+import { GetUsersResponseDTO } from './dtos/get-users.dto';
 
 @Controller('users')
 export class AppController {
   private _database: Pool;
-  users: UserModel[] = [];
 
   constructor() {
     this._database = new Pool({
@@ -36,6 +35,13 @@ export class AppController {
     });
   }
 
+  private async _comparePassword(
+    hashsedPassword: string,
+    password: string,
+  ): Promise<boolean> {
+    return bcrypt.compare(password, hashsedPassword);
+  }
+
   private async _hashPassword(password: string): Promise<string> {
     const saltRounds = 10;
 
@@ -44,21 +50,26 @@ export class AppController {
 
   @HttpCode(HttpStatus.OK)
   @Get()
-  async getUsers(): Promise<{ id: string; name: string }[]> {
+  async getUsers(): Promise<GetUsersResponseDTO> {
     const response = await this._database.query<UserModel>(
       `
       SELECT
         id AS "id",
         name AS "name",
-        password AS "password"
+        password AS "password",
+        created_at AS "createdAt"
       FROM "users"
       `,
     );
 
-    return response.rows.map((users) => ({
-      id: users.id,
-      name: users.name,
+    const users = response.rows.map((user) => ({
+      id: user.id,
+      name: user.name,
     }));
+
+    return {
+      users,
+    };
   }
 
   @HttpCode(HttpStatus.CREATED)
@@ -76,7 +87,8 @@ export class AppController {
         RETURNING
           id AS "id",
           name AS "name",
-          password AS "password"
+          password AS "password",
+          created_at AS "createdAt"
       `,
       [body.name, hashedPassword],
     );
@@ -91,29 +103,25 @@ export class AppController {
   async getUserById(
     @Param('userId') userId: string,
   ): Promise<{ id: string; name: string }> {
-    const selectUser = await this._database.query<UserModel>(
+    const selectUser = await this._database.query(
       `
-      SELECT
-        u.id AS "id",
-        u.name AS "name",
-        u.password AS "password"
-      FROM "users" AS u
-      WHERE id = $1
+      SELECT EXISTS (SELECT 1 FROM "users" AS u WHERE u.id = $1);
       `,
       [userId],
     );
 
-    if (!selectUser.rows[0]) {
+    if (!selectUser.rows[0].exists) {
       throw new NotFoundException('User not exist.');
     }
 
     const response = await this._database.query<UserModel>(
       `
       SELECT
-        id AS "id",
-        name AS "name",
-        password AS "password"
-      FROM "users"
+        u.id AS "id",
+        u.name AS "name",
+        u.password AS "password",
+        u.created_at AS "createdAt"
+      FROM "users" AS u
       WHERE id = $1
       `,
       [userId],
@@ -127,19 +135,14 @@ export class AppController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() body: UpdatedUserNameRequestDTO,
   ): Promise<{ id: string; name: string }> {
-    const selectUser = await this._database.query<UserModel>(
+    const selectUser = await this._database.query(
       `
-      SELECT
-        u.id AS "id",
-        u.name AS "name",
-        u.password AS "password"
-      FROM "users" AS u
-      WHERE id = $1
+      SELECT EXISTS (SELECT 1 FROM "users" AS u WHERE u.id = $1);
       `,
       [userId],
     );
 
-    if (!selectUser.rows[0]) {
+    if (!selectUser.rows[0].exists) {
       throw new NotFoundException('User not exist.');
     }
 
@@ -151,7 +154,8 @@ export class AppController {
       RETURNING 
         id AS "id", 
         name AS "name",
-        password AS "password";
+        password AS "password",
+        created_at AS "createdAt"
       `,
       [body.name, userId],
     );
@@ -170,9 +174,10 @@ export class AppController {
       SELECT
         u.id AS "id",
         u.name AS "name",
-        u.password AS "password"
+        u.password AS "password",
+        u.created_at AS "createdAt"
       FROM "users" AS u
-      WHERE id = $1
+      WHERE u.id = $1
       `,
       [userId],
     );
@@ -182,6 +187,14 @@ export class AppController {
     }
 
     const hashPassword = await this._hashPassword(body.password);
+
+    const comparePassword = await this._comparePassword(
+      selectUser.rows[0].password,
+      body.password,
+    );
+    if (comparePassword) {
+      throw new BadRequestException('Senhas devem ser diferentes.');
+    }
 
     await this._database.query(
       `
@@ -197,33 +210,25 @@ export class AppController {
   @Delete(':userId')
   async removeUser(
     @Param('userId', ParseUUIDPipe) userId: string,
-  ): Promise<{ id: string; name: string }> {
-    const selectUser = await this._database.query<UserModel>(
+  ): Promise<void> {
+    const selectUser = await this._database.query(
       `
-      SELECT
-        u.id AS "id",
-        u.name AS "name",
-        u.password AS "password"
-      FROM "users" AS u
-      WHERE id = $1
+      SELECT EXISTS (SELECT 1 FROM "users" AS u WHERE u.id = $1);
       `,
       [userId],
     );
 
-    if (!selectUser.rows[0]) {
+    if (!selectUser.rows[0].exists) {
       throw new NotFoundException('User not exist.');
     }
 
-    const response = await this._database.query<UserModel>(
+    await this._database.query(
       `
       DELETE
       FROM "users"
       WHERE id = $1
-      RETURNING id, name
       `,
       [userId],
     );
-
-    return { id: response.rows[0].id, name: response.rows[0].name };
   }
 }

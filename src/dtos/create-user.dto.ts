@@ -1,4 +1,4 @@
-import { IsAlpha, IsNotEmpty, IsStrongPassword } from 'class-validator';
+import { IsNotEmpty, IsStrongPassword } from 'class-validator';
 
 export class CreateUserRequestDTO {
   @IsNotEmpty()
@@ -12,4 +12,9 @@ export class CreateUserRequestDTO {
     minUppercase: 1,
   })
   password: string;
+}
+
+export class CreateUserResponseDTO {
+  id: string;
+  name: string;
 }
