@@ -14,8 +14,10 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { UserModel } from 'src/models/user';
-import { UpdatedUserNameRequestDTO } from './dtos/update-user-name.dto';
+import {
+  UpdatedUserNameRequestDTO,
+  UpdatedUserNameResponseDTO,
+} from './dtos/update-user-name.dto';
 import {
   CreateUserRequestDTO,
   CreateUserResponseDTO,
@@ -113,7 +115,7 @@ export class AppController {
   async updatedUserName(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() body: UpdatedUserNameRequestDTO,
-  ): Promise<{ id: string; name: string }> {
+  ): Promise<UpdatedUserNameResponseDTO> {
     const selectUser = await this._userRepository.findOne({
       where: { id: userId },
     });
