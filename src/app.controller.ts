@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -15,17 +16,27 @@ import {
 } from '@nestjs/common';
 import { UserModel } from 'src/models/user';
 import { UpdatedUserNameRequestDTO } from './dtos/update-user-name.dto';
-import { CreateUserRequestDTO } from './dtos/create-user.dto';
+import {
+  CreateUserRequestDTO,
+  CreateUserResponseDTO,
+} from './dtos/create-user.dto';
 import { UpdateUserPasswordRequestDTO } from './dtos/update-user-password.dto';
 import * as bcrypt from 'bcrypt';
 import { Pool } from 'pg';
 import { GetUsersResponseDTO } from './dtos/get-users.dto';
+import { GetUserByIdResponseDTO } from './dtos/get-user-by-id.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { UserEntity } from './entities/user.entity';
+import { Repository } from 'typeorm';
 
 @Controller('users')
 export class AppController {
   private _database: Pool;
 
-  constructor() {
+  constructor(
+    @InjectRepository(UserEntity)
+    private readonly _userRepository: Repository<UserEntity>,
+  ) {
     this._database = new Pool({
       host: 'localhost',
       user: 'pocadmin',
@@ -51,24 +62,13 @@ export class AppController {
   @HttpCode(HttpStatus.OK)
   @Get()
   async getUsers(): Promise<GetUsersResponseDTO> {
-    const response = await this._database.query<UserModel>(
-      `
-      SELECT
-        id AS "id",
-        name AS "name",
-        password AS "password",
-        created_at AS "createdAt"
-      FROM "users"
-      `,
-    );
-
-    const users = response.rows.map((user) => ({
-      id: user.id,
-      name: user.name,
-    }));
+    const users = await this._userRepository.find();
 
     return {
-      users,
+      users: users.map((user) => ({
+        id: user.id,
+        name: user.name,
+      })),
     };
   }
 
@@ -76,24 +76,13 @@ export class AppController {
   @Post()
   async createUser(
     @Body() body: CreateUserRequestDTO,
-  ): Promise<{ id: string; name: string }> {
+  ): Promise<CreateUserResponseDTO> {
     const hashedPassword = await this._hashPassword(body.password);
 
-    const response = await this._database.query<UserModel>(
-      `
-        INSERT INTO "users"
-        ("name", "password")
-        VALUES ($1, $2)
-        RETURNING
-          id AS "id",
-          name AS "name",
-          password AS "password",
-          created_at AS "createdAt"
-      `,
-      [body.name, hashedPassword],
-    );
-
-    const user = response.rows[0];
+    const user = await this._userRepository.save({
+      name: body.name,
+      password: hashedPassword,
+    });
 
     return { id: user.id, name: user.name };
   }
@@ -102,31 +91,21 @@ export class AppController {
   @Get(':userId')
   async getUserById(
     @Param('userId') userId: string,
-  ): Promise<{ id: string; name: string }> {
-    const selectUser = await this._database.query(
-      `
-      SELECT EXISTS (SELECT 1 FROM "users" AS u WHERE u.id = $1);
-      `,
-      [userId],
-    );
+  ): Promise<GetUserByIdResponseDTO> {
+    const selectUser = await this._userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'name'],
+    });
 
-    if (!selectUser.rows[0].exists) {
+    if (!selectUser) {
       throw new NotFoundException('User not exist.');
     }
 
-    const response = await this._database.query<UserModel>(
-      `
-      SELECT
-        u.id AS "id",
-        u.name AS "name",
-        u.password AS "password",
-        u.created_at AS "createdAt"
-      FROM "users" AS u
-      WHERE id = $1
-      `,
-      [userId],
-    );
-    return { id: response.rows[0].id, name: response.rows[0].name };
+    return {
+      id: selectUser.id,
+      name: selectUser.name,
+      createdAt: selectUser.createdAt,
+    };
   }
 
   @HttpCode(HttpStatus.OK)
@@ -135,32 +114,17 @@ export class AppController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() body: UpdatedUserNameRequestDTO,
   ): Promise<{ id: string; name: string }> {
-    const selectUser = await this._database.query(
-      `
-      SELECT EXISTS (SELECT 1 FROM "users" AS u WHERE u.id = $1);
-      `,
-      [userId],
-    );
+    const selectUser = await this._userRepository.findOne({
+      where: { id: userId },
+    });
 
-    if (!selectUser.rows[0].exists) {
+    if (!selectUser) {
       throw new NotFoundException('User not exist.');
     }
 
-    const response = await this._database.query<UserModel>(
-      `
-      UPDATE "users"
-        SET name = $1
-      WHERE id = $2
-      RETURNING 
-        id AS "id", 
-        name AS "name",
-        password AS "password",
-        created_at AS "createdAt"
-      `,
-      [body.name, userId],
-    );
+    await this._userRepository.update(userId, { name: body.name });
 
-    return { name: response.rows[0].name, id: response.rows[0].id };
+    return { id: selectUser.id, name: selectUser.name };
   }
 
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -169,41 +133,28 @@ export class AppController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() body: UpdateUserPasswordRequestDTO,
   ): Promise<void> {
-    const selectUser = await this._database.query<UserModel>(
-      `
-      SELECT
-        u.id AS "id",
-        u.name AS "name",
-        u.password AS "password",
-        u.created_at AS "createdAt"
-      FROM "users" AS u
-      WHERE u.id = $1
-      `,
-      [userId],
-    );
+    const selectUser = await this._userRepository.findOne({
+      where: { id: userId },
+    });
 
-    if (!selectUser.rows[0]) {
+    if (!selectUser) {
       throw new NotFoundException('User not exist.');
     }
 
     const hashPassword = await this._hashPassword(body.password);
 
     const comparePassword = await this._comparePassword(
-      selectUser.rows[0].password,
+      selectUser.password,
       body.password,
     );
+
     if (comparePassword) {
       throw new BadRequestException('Senhas devem ser diferentes.');
     }
 
-    await this._database.query(
-      `
-      UPDATE "users"
-        SET password = $1
-      WHERE id = $2
-    `,
-      [hashPassword, userId],
-    );
+    await this._userRepository.update(userId, {
+      password: hashPassword,
+    });
   }
 
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -211,24 +162,10 @@ export class AppController {
   async removeUser(
     @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<void> {
-    const selectUser = await this._database.query(
-      `
-      SELECT EXISTS (SELECT 1 FROM "users" AS u WHERE u.id = $1);
-      `,
-      [userId],
-    );
+    const selectUser = await this._userRepository.delete(userId);
 
-    if (!selectUser.rows[0].exists) {
+    if (!selectUser) {
       throw new NotFoundException('User not exist.');
     }
-
-    await this._database.query(
-      `
-      DELETE
-      FROM "users"
-      WHERE id = $1
-      `,
-      [userId],
-    );
   }
 }
