@@ -28,9 +28,8 @@ import { GetUsersResponseDTO } from './dtos/get-users.dto';
 import { GetUserByIdResponseDTO } from './dtos/get-user-by-id.dto';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { UserEntity } from './entities/user.entity';
-import { Any, DataSource, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { WalletEntity } from './entities/wallet.entity';
-import { stringToBytes } from 'uuid/dist/cjs/v35';
 
 @Controller('users')
 export class UserController {
@@ -206,10 +205,30 @@ export class UserController {
   async removeUser(
     @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<void> {
-    const selectUser = await this._userRepository.delete(userId);
+    const queryRunner = this._dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    const manager = queryRunner.manager;
 
-    if (!selectUser) {
-      throw new NotFoundException('User not exist.');
+    try {
+      const selectUser = await manager.findOne(UserEntity, {
+        where: { id: userId },
+      });
+
+      if (!selectUser) {
+        throw new NotFoundException('User not found.');
+      }
+
+      await manager.delete(WalletEntity, { userId: userId });
+
+      await manager.delete(UserEntity, { id: userId });
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
     }
   }
 }
