@@ -5,19 +5,16 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-@Entity('users')
-export class UserEntity {
+@Entity('wallets')
+export class WalletEntity {
   @PrimaryGeneratedColumn('uuid', { name: 'id' })
   id: string;
 
-  @Column({ name: 'name', type: 'varchar' })
-  name: string;
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId: string;
 
-  @Column({ name: 'password', type: 'varchar' })
-  password: string;
-
-  @Column({ name: 'email', type: 'varchar' })
-  email: string;
+  @Column({ name: 'balance', type: 'money' })
+  balance: number;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

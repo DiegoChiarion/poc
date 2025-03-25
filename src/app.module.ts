@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
+import { UserController } from './user.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserEntity } from './entities/user.entity';
+import { LoginController } from './login.controller';
+import { WalletEntity } from './entities/wallet.entity';
 
 @Module({
   imports: [
@@ -12,12 +14,12 @@ import { UserEntity } from './entities/user.entity';
       password: 'password102030',
       port: 5432,
       database: 'poc_database',
-      entities: [UserEntity],
+      entities: [UserEntity, WalletEntity],
       synchronize: true,
     }),
-    TypeOrmModule.forFeature([UserEntity]),
+    TypeOrmModule.forFeature([UserEntity, WalletEntity]),
   ],
-  controllers: [AppController],
+  controllers: [UserController, LoginController],
   providers: [],
 })
 export class AppModule {}

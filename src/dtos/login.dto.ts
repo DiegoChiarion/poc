@@ -1,8 +1,9 @@
 import { IsEmail, IsNotEmpty, IsStrongPassword } from 'class-validator';
 
-export class CreateUserRequestDTO {
+export class LoginRequestDTO {
   @IsNotEmpty()
-  name: string;
+  @IsEmail()
+  email: string;
 
   @IsStrongPassword({
     minLength: 8,
@@ -12,16 +13,8 @@ export class CreateUserRequestDTO {
     minUppercase: 1,
   })
   password: string;
-  @IsNotEmpty()
-  @IsEmail()
-  email: string;
 }
 
-export class CreateUserResponseDTO {
-  id: string;
-  name: string;
-  wallet: {
-    id: string;
-    balance: number;
-  };
+export class LoginResponseDTO {
+  token: string;
 }
