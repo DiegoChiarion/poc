@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { UserController } from './user.controller';
+import { UserController } from './controllers/user.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserEntity } from './entities/user.entity';
-import { LoginController } from './login.controller';
+import { LoginController } from './controllers/login.controller';
 import { WalletEntity } from './entities/wallet.entity';
 
 @Module({
@@ -16,6 +16,7 @@ import { WalletEntity } from './entities/wallet.entity';
       database: 'poc_database',
       entities: [UserEntity, WalletEntity],
       synchronize: true,
+      logging: false,
     }),
     TypeOrmModule.forFeature([UserEntity, WalletEntity]),
   ],

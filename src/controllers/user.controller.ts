@@ -1,36 +1,39 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
-  InternalServerErrorException,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Put,
+  UseGuards,
 } from '@nestjs/common';
 import {
   UpdatedUserNameRequestDTO,
   UpdatedUserNameResponseDTO,
-} from './dtos/update-user-name.dto';
+} from '../dtos/update-user-name.dto';
 import {
   CreateUserRequestDTO,
   CreateUserResponseDTO,
-} from './dtos/create-user.dto';
-import { UpdateUserPasswordRequestDTO } from './dtos/update-user-password.dto';
+} from '../dtos/create-user.dto';
+import { UpdateUserPasswordRequestDTO } from '../dtos/update-user-password.dto';
 import * as bcrypt from 'bcrypt';
-import { GetUsersResponseDTO } from './dtos/get-users.dto';
-import { GetUserByIdResponseDTO } from './dtos/get-user-by-id.dto';
+import { GetUsersResponseDTO } from '../dtos/get-users.dto';
+import { GetUserByIdResponseDTO } from '../dtos/get-user-by-id.dto';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { UserEntity } from './entities/user.entity';
+import { UserEntity } from '../entities/user.entity';
 import { DataSource, Repository } from 'typeorm';
-import { WalletEntity } from './entities/wallet.entity';
+import { WalletEntity } from '../entities/wallet.entity';
+import { AuthGuard } from 'src/guards/auth.guard';
 
+@UseGuards(AuthGuard)
 @Controller('users')
 export class UserController {
   constructor(
@@ -59,18 +62,16 @@ export class UserController {
   async getUsers(): Promise<GetUsersResponseDTO> {
     const response: GetUsersResponseDTO = { users: [] };
 
-    const users = await this._userRepository.find();
+    const users = await this._userRepository.find({
+      relations: ['wallet'],
+    });
 
     for (const user of users) {
-      const wallet = await this._walletRepository.findOne({
-        where: { userId: user.id },
-      });
-
       response.users.push({
         id: user.id,
         name: user.name,
         email: user.email,
-        wallet: wallet ? { id: wallet.id, balance: wallet.balance } : null, // ou {}
+        wallet: { id: user.wallet.id, balance: user.wallet.balance },
       });
     }
     return response;
@@ -89,6 +90,14 @@ export class UserController {
     try {
       const hashedPassword = await this._hashPassword(body.password);
 
+      const userExists = await manager.exists(UserEntity, {
+        where: { email: body.email },
+      });
+
+      if (userExists) {
+        throw new ConflictException('Email already exist.');
+      }
+
       const user = await manager.save(UserEntity, {
         name: body.name,
         email: body.email,
@@ -96,7 +105,7 @@ export class UserController {
       });
 
       const wallet = await manager.save(WalletEntity, {
-        userId: user.id,
+        user,
         balance: 100,
       });
 
@@ -125,18 +134,11 @@ export class UserController {
   ): Promise<GetUserByIdResponseDTO> {
     const user = await this._userRepository.findOne({
       where: { id: userId },
+      relations: ['wallet'],
     });
 
     if (!user) {
       throw new NotFoundException('User not exist.');
-    }
-
-    const wallet = await this._walletRepository.findOne({
-      where: { userId: userId },
-    });
-
-    if (!wallet) {
-      throw new InternalServerErrorException('Wallet not exist.');
     }
 
     return {
@@ -145,8 +147,8 @@ export class UserController {
       createdAt: user.createdAt,
       email: user.email,
       wallet: {
-        id: wallet.id,
-        balance: wallet.balance,
+        id: user.wallet.id,
+        balance: user.wallet.balance,
       },
     };
   }
@@ -211,17 +213,18 @@ export class UserController {
     const manager = queryRunner.manager;
 
     try {
-      const selectUser = await manager.findOne(UserEntity, {
+      const user = await manager.findOne(UserEntity, {
         where: { id: userId },
+        relations: ['wallet'],
       });
 
-      if (!selectUser) {
+      if (!user) {
         throw new NotFoundException('User not found.');
       }
 
-      await manager.delete(WalletEntity, { userId: userId });
+      await manager.delete(WalletEntity, user.wallet.id);
 
-      await manager.delete(UserEntity, { id: userId });
+      await manager.delete(UserEntity, user.id);
 
       await queryRunner.commitTransaction();
     } catch (err) {

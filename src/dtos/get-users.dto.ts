@@ -6,6 +6,6 @@ export class GetUsersResponseDTO {
     wallet: {
       id: string;
       balance: number;
-    } | null;
+    };
   }[];
 }

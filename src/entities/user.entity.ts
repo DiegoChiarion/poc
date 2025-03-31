@@ -2,8 +2,10 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { WalletEntity } from './wallet.entity';
 
 @Entity('users')
 export class UserEntity {
@@ -21,4 +23,7 @@ export class UserEntity {
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
+
+  @OneToOne(() => WalletEntity, (wallet) => wallet.user)
+  wallet: WalletEntity;
 }

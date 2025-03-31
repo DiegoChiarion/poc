@@ -7,9 +7,9 @@ import {
   Post,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { UserEntity } from './entities/user.entity';
+import { UserEntity } from '../entities/user.entity';
 import { Repository } from 'typeorm';
-import { LoginRequestDTO, LoginResponseDTO } from './dtos/login.dto';
+import { LoginRequestDTO, LoginResponseDTO } from '../dtos/login.dto';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 
