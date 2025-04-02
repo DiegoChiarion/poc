@@ -40,8 +40,6 @@ export class UserController {
     @InjectDataSource() private readonly _dataSource: DataSource,
     @InjectRepository(UserEntity)
     private readonly _userRepository: Repository<UserEntity>,
-    @InjectRepository(WalletEntity)
-    private readonly _walletRepository: Repository<WalletEntity>,
   ) {}
 
   private async _comparePassword(
