@@ -32,8 +32,8 @@ import { UserEntity } from '../entities/user.entity';
 import { DataSource, Repository } from 'typeorm';
 import { WalletEntity } from '../entities/wallet.entity';
 import { AuthGuard } from 'src/guards/auth.guard';
+import { CurrentUser } from 'src/helpers/current-user.helper';
 
-@UseGuards(AuthGuard)
 @Controller('users')
 export class UserController {
   constructor(
@@ -54,10 +54,12 @@ export class UserController {
 
     return bcrypt.hash(password, saltRounds);
   }
-
+  @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.OK)
   @Get()
-  async getUsers(): Promise<GetUsersResponseDTO> {
+  async getUsers(
+    @CurrentUser() currentUser: UserEntity,
+  ): Promise<GetUsersResponseDTO> {
     const response: GetUsersResponseDTO = { users: [] };
 
     const users = await this._userRepository.find({
@@ -124,7 +126,7 @@ export class UserController {
       await queryRunner.release();
     }
   }
-
+  @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.OK)
   @Get(':userId')
   async getUserById(
@@ -150,7 +152,7 @@ export class UserController {
       },
     };
   }
-
+  @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.OK)
   @Put(':userId')
   async updatedUserName(
@@ -169,7 +171,7 @@ export class UserController {
 
     return { id: selectUser.id, name: selectUser.name };
   }
-
+  @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   @Patch(':userId/password')
   async updateUserPassword(
@@ -199,7 +201,7 @@ export class UserController {
       password: hashPassword,
     });
   }
-
+  @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   @Delete(':userId')
   async removeUser(
